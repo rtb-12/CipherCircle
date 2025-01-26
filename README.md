@@ -1,42 +1,16 @@
-# Core App Template
+# CipherCircle: Decentralized Legal Communication Platform
 
-## Logic
+A blockchain-powered communication platform designed exclusively for legal professionals and their clients, prioritizing security, privacy, and compliance.
 
-```bash title="Terminal"
-cd logic
-```
+## 🌟 Overview
 
-```bash title="Terminal"
-chmod +x ./build.sh
-```
+**CipherCircle** revolutionizes legal communication by combining decentralized technology with military-grade encryption. Built on the Internet Computer Protocol (ICP) and Calimero private shards, it offers:
 
-```bash title="Terminal"
-./build.sh
-```
+- 🔐 End-to-end encrypted messaging
+- ⚖️ Legal-specific collaboration tools
+- 🤖 AI-powered document analysis
+- 🛡️ Client-controlled data governance
+- 🌐 Blockchain-based audit trails
 
-```bash title="Terminal"
-./release.sh <near_network> <near_credentials_file_path> <near_contract_account_id>
-```
-
-## App
-
-```bash title="Terminal"
-cd app
-```
-
-```bash title="Terminal"
-pnpm install
-```
-
-```bash title="Terminal"
-pnpm build
-```
-
-```bash title="Terminal"
-pnpm dev
-```
-
-Open app in browser and connect to running node.
-
-For more information how to build app check our docs:
-https://calimero-network.github.io/build/quickstart
+**Target Audience:**  
+Law firms • Corporate legal departments • Independent attorneys • Legal clients
