@@ -1,37 +1,89 @@
-import React, { useState } from 'react';
+import React, { useState ,useEffect} from 'react';
 import { motion } from 'framer-motion';
 import { EvervaultCard, Icon } from '@/components/ui/evervault-card';
 import { SidebarApp } from '@/components/sidebar/sidebarApp';
+import { CipherCircleApiClient } from '@/api/cipherCircleApi';
+import { LegalDocument } from '@/api/clientApi';
+
 
 const Documents = () => {
-  const [documents] = useState([
-    {
-      id: 1,
-      name: 'Merger-Agreement.pdf',
-      type: 'pdf',
-      size: '2.4 MB',
-      uploaded: '2024-03-15',
-      encrypted: true,
-      access: ['John D.', 'Sarah M.', 'Client Corp'],
-      activity: [
-        { user: 'John D.', action: 'viewed', time: '2h ago' },
-        { user: 'Sarah M.', action: 'edited', time: '4h ago' },
-      ],
-    },
-    {
-      id: 2,
-      name: 'NDA-Template.docx',
-      type: 'doc',
-      size: '1.1 MB',
-      uploaded: '2024-03-14',
-      encrypted: false,
-      access: ['Legal Team'],
-      activity: [{ user: 'AI Assistant', action: 'analyzed', time: '1d ago' }],
-    },
-  ]);
-
-  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [documents, setDocuments] = useState<LegalDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<LegalDocument | null>(null);
   const [newAccess, setNewAccess] = useState('');
+  const api = new CipherCircleApiClient();
+
+
+  useEffect(() => {
+    fetchDocuments();
+  }, []);
+
+  const fetchDocuments = async () => {
+    try {
+      setLoading(true);
+      const response = await api.getAccessibleDocuments();
+      
+      if ('error' in response) {
+        setError(response.error.message);
+      } else {
+        setDocuments(response.data);
+      }
+    } catch (err) {
+      setError('Failed to fetch documents');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadDocument = async (file: File) => {
+    try {
+      // Convert file to byte array
+      const arrayBuffer = await file.arrayBuffer();
+      const encrypted_content = Array.from(new Uint8Array(arrayBuffer));
+      
+      // Create hash from file name and timestamp
+      const doc_hash = `${file.name}_${Date.now()}`;
+      
+      const params = {
+        encrypted_content,
+        doc_hash,
+        document_type: file.type,
+        case_id: undefined, // Optional: Add case_id if needed
+        initial_access_list: [] // Optional: Add initial access list
+      };
+
+      const response = await api.storeDocumentInVault(params);
+      
+      if ('error' in response) {
+        throw new Error(response.error.message);
+      }
+
+      // Refresh document list
+      fetchDocuments();
+    } catch (err) {
+      setError('Failed to upload document');
+    }
+  };
+
+  const handleGrantAccess = async (docHash: string, granteeId: string, isGroup: boolean) => {
+    try {
+      const response = await api.grantVaultAccess(docHash, granteeId, isGroup);
+      
+      if ('error' in response) {
+        throw new Error(response.error.message);
+      }
+
+      // Refresh documents to get updated access list
+      await fetchDocuments();
+      
+      // Clear input
+      setNewAccess('');
+    } catch (err) {
+      setError('Failed to grant access');
+    }
+  };
+
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-white to-neutral-50 dark:from-neutral-900 dark:to-neutral-800">
@@ -41,14 +93,21 @@ const Documents = () => {
       </div>
       {/* Main Content */}
       <main className="flex-1 p-8">
-        {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-neutral-900 dark:text-white">
             Document Vault
           </h1>
-          <button className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:shadow-lg transition-all">
+          <label className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:shadow-lg transition-all cursor-pointer">
             + New Document
-          </button>
+            <input
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUploadDocument(file);
+              }}
+            />
+          </label>
         </div>
 
         {/* Stats Cards */}
@@ -80,135 +139,122 @@ const Documents = () => {
         </div>
 
         {/* Document Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {documents.map((doc) => (
-            <motion.div
-              key={doc.id}
-              whileHover={{ y: -5 }}
-              className="bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 p-6"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-                  <span className="text-blue-500 dark:text-blue-400 text-xl">
-                    {doc.type === 'pdf' ? '📄' : '📝'}
-                  </span>
-                </div>
-                <button className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white">
-                  •••
-                </button>
-              </div>
-
-              <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">
-                {doc.name}
-              </h3>
-
-              <div className="flex items-center space-x-4 text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-                <span>{doc.size}</span>
-                <span>•</span>
-                <span>{doc.uploaded}</span>
-              </div>
-
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex -space-x-2">
-                  {doc.access.map((user, index) => (
-                    <div
-                      key={index}
-                      className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 border-2 border-white dark:border-neutral-900"
-                    />
-                  ))}
-                </div>
-                <span
-                  className={`px-2 py-1 rounded-full text-xs ${
-                    doc.encrypted
-                      ? 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                      : 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400'
-                  }`}
-                >
-                  {doc.encrypted ? 'Encrypted' : 'Unsecured'}
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {doc.activity.map((activity, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between text-sm"
-                  >
-                    <span className="text-neutral-600 dark:text-neutral-300">
-                      <span className="font-medium text-neutral-900 dark:text-white">
-                        {activity.user}
-                      </span>{' '}
-                      {activity.action}
-                    </span>
-                    <span className="text-neutral-500 dark:text-neutral-400">
-                      {activity.time}
+        {loading ? (
+          <div className="text-center">Loading documents...</div>
+        ) : error ? (
+          <div className="text-red-500 text-center">{error}</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {documents.map((doc) => (
+              <motion.div
+                key={doc.document_hash}
+                whileHover={{ y: -5 }}
+                className="bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 p-6"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+                    <span className="text-blue-500 dark:text-blue-400 text-xl">
+                      {doc.document_type.includes('pdf') ? '📄' : '📝'}
                     </span>
                   </div>
-                ))}
-              </div>
+                </div>
 
-              <button
-                onClick={() => setSelectedDoc(doc)}
-                className="w-full mt-4 px-4 py-2 bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-600 rounded-lg text-sm transition-colors"
-              >
-                Manage Access
-              </button>
-            </motion.div>
-          ))}
-        </div>
+                <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">
+                  {doc.document_hash}
+                </h3>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex -space-x-2">
+                    {doc.access_list.map((userId, index) => (
+                      <div
+                        key={index}
+                        className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 border-2 border-white dark:border-neutral-900"
+                        title={userId}
+                      />
+                    ))}
+                  </div>
+                  <span className="px-2 py-1 rounded-full text-xs bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400">
+                    Encrypted
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => setSelectedDoc(doc)}
+                  className="w-full mt-4 px-4 py-2 bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-600 rounded-lg text-sm transition-colors"
+                >
+                  Manage Access
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        )}
 
         {/* Access Management Modal */}
         {selectedDoc && (
-          <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-neutral-800 rounded-xl p-6 max-w-md w-full">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-neutral-900 dark:text-white">
-                  Manage Access - {selectedDoc.name}
-                </h2>
-                <button
-                  onClick={() => setSelectedDoc(null)}
-                  className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+      <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-neutral-800 rounded-xl p-6 max-w-md w-full">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-neutral-900 dark:text-white">
+              Manage Access - {selectedDoc.document_hash}
+            </h2>
+            <button
+              onClick={() => setSelectedDoc(null)}
+              className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Add user or group ID..."
+                value={newAccess}
+                onChange={(e) => setNewAccess(e.target.value)}
+                className="flex-1 p-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600"
+              />
+              <select
+                className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600"
+                id="accessType"
+                defaultValue="user"
+              >
+                <option value="user">User</option>
+                <option value="group">Group</option>
+              </select>
+              <button 
+                onClick={() => {
+                  const isGroup = (document.getElementById('accessType') as HTMLSelectElement).value === 'group';
+                  if (newAccess && selectedDoc) {
+                    handleGrantAccess(selectedDoc.document_hash, newAccess, isGroup);
+                  }
+                }}
+                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg"
+              >
+                Add
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-medium text-neutral-900 dark:text-white">
+                Current Access
+              </h3>
+              {selectedDoc.access_list.map((userId, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-2 bg-neutral-100 dark:bg-neutral-700 rounded-lg"
                 >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Add user or group..."
-                    value={newAccess}
-                    onChange={(e) => setNewAccess(e.target.value)}
-                    className="flex-1 p-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600"
-                  />
-                  <button className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg">
-                    Add
-                  </button>
+                  <span className="text-neutral-900 dark:text-white">
+                    {userId}
+                  </span>
+                  {/* Add revoke functionality if needed */}
                 </div>
-
-                <div className="space-y-2">
-                  <h3 className="font-medium text-neutral-900 dark:text-white">
-                    Current Access
-                  </h3>
-                  {selectedDoc.access.map((user, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-2 bg-neutral-100 dark:bg-neutral-700 rounded-lg"
-                    >
-                      <span className="text-neutral-900 dark:text-white">
-                        {user}
-                      </span>
-                      <button className="text-red-500 hover:text-red-600 dark:hover:text-red-400">
-                        Revoke
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              ))}
             </div>
           </div>
-        )}
+        </div>
+      </div>
+    )}
       </main>
 
       {/* Right Sidebar */}

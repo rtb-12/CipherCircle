@@ -1,107 +1,166 @@
-import { ApiResponse } from '@calimero-is-near/calimero-p2p-sdk';
+import { ApiResponse } from '@calimero-network/calimero-client';
 
-export interface Message {
-  id: String;
-  proposal_id: String;
-  author: String;
-  text: String;
-  created_at: String;
+// Core types that match Rust structs
+export enum MessageMode {
+  Vanish = 'Vanish',
+  Persistent = 'Persistent',
+}
+export enum PrivacyLevel {
+  Private = 'Private',
+  Public = 'Public',
 }
 
-export interface GetProposalMessagesRequest {
-  // proposalId: String;
-  proposal_id: String;
+export enum PrivacyLevel {
+  Private = 'Private', // Only invited members can access
+  Public = 'Public', // Visible to whole organization
 }
 
-export interface GetProposalMessagesResponse {
-  messages: Message[];
+export interface CaseMember {
+  member_id: string;
+  role: string; // "lawyer" or "client"
+  is_admin: boolean;
 }
 
-export interface SendProposalMessageRequest {
-  // proposalId: String;
-  proposal_id: String;
-  message: Message;
+export interface CaseCreateParams {
+  case_name: string; // mandatory
+  description: string; // mandatory
+  privacy_level: PrivacyLevel; // mandatory
+  client_id?: string; // optional
+  initial_docs?: string[]; // optional
 }
 
-export interface SendProposalMessageResponse {}
-
-export enum ProposalActionType {
-  ExternalFunctionCall = 'ExternalFunctionCall',
-  Transfer = 'Transfer',
-  SetNumApprovals = 'SetNumApprovals',
-  SetActiveProposalsLimit = 'SetActiveProposalsLimit',
-  SetContextValue = 'SetContextValue',
-  DeleteProposal = 'DeleteProposal',
+export interface EncryptedMessage {
+  ciphertext: number[];
+  iv: number[];
+  sender_id: string;
+  recipient_ids: string[];
+  timestamp: number;
+  mode: MessageMode;
+  read_receipts: string[];
 }
 
-export type FormActionType =
-  | 'Cross contract call'
-  | 'Transfer'
-  | 'Set context variable'
-  | 'Change number of approvals needed'
-  | 'Change number of maximum active proposals';
-
-export interface ExternalFunctionCallAction {
-  type: ProposalActionType.ExternalFunctionCall;
-  receiver_id: string;
-  method_name: string;
-  args: Record<string, any>;
-  deposit: string;
-  gas?: string;
+export interface LegalDocument {
+  encrypted_content: number[];
+  document_hash: string;
+  document_type: string;
+  owner_id: string;
+  case_id?: string;
+  access_list: string[];
+  ai_analysis_id?: string;
+  payment_id?: string;
+  timestamp: number;
 }
 
-export interface TransferAction {
-  type: ProposalActionType.Transfer;
-  amount: string;
+export interface LegalCase {
+  case_id: string;
+  case_name: string;
+  client_id: string;
+  lawyer_ids: string[];
+  admin_id: string;
+  status: string;
+  related_documents: string[];
+  privacy_level: PrivacyLevel;
 }
 
-export interface CreateProposalRequest {
-  action_type: string;
-  params: {
-    receiver_id?: string;
-    method_name?: string;
-    args?: string;
-    deposit?: string;
-    gas?: string;
-    amount?: string;
-    num_approvals?: number;
-    active_proposals_limit?: number;
-    key?: string;
-    value?: string;
-    proposal_id?: string;
-  };
+export interface LegalConsent {
+  client_id: string;
+  lawyer_id: string;
+  scope: string;
+  expiration: number;
+  public_key: number[];
+  signed_message: number[];
+  signature: number[];
 }
 
-export interface CreateProposalResponse {
-  proposal_id: String;
+export interface AIAnalysisResult {
+  analysis_id: string;
+  document_hash: string;
+  summary: string;
+  risks_detected: number;
+  recommendations: string[];
+  generated_by: string;
+  timestamp: number;
 }
 
-export interface ApproveProposalRequest {
-  proposal_id: string;
-}
+// API Interface
+export interface CipherCircleApi {
+  // Messaging
+  sendMessage(
+    case_id: string,
+    ciphertext: number[],
+    iv: number[],
+    mode: MessageMode,
+  ): Promise<ApiResponse<void>>;
 
-export interface ApproveProposalResponse {}
+  markMessageRead(
+    case_id: string,
+    message_index: number,
+    reader_id: string,
+  ): Promise<ApiResponse<void>>;
 
-export enum ClientMethod {
-  GET_PROPOSAL_MESSAGES = 'get_proposal_messages',
-  SEND_PROPOSAL_MESSAGE = 'send_proposal_messages',
-  CREATE_PROPOSAL = 'create_new_proposal',
-  APPROVE_PROPOSAL = 'approve_proposal',
-}
+  getVisibleMessages(
+    case_id: string,
+    requester_id: string,
+  ): Promise<ApiResponse<EncryptedMessage[]>>;
 
-export interface ClientApi {
-  //Cali Storage
-  getProposalMessages(
-    proposalsRequest: GetProposalMessagesRequest,
-  ): ApiResponse<GetProposalMessagesResponse>;
-  sendProposalMessage(
-    sendMessageRequest: SendProposalMessageRequest,
-  ): ApiResponse<SendProposalMessageResponse>;
-  createProposal(
-    request: CreateProposalRequest,
-  ): ApiResponse<CreateProposalResponse>;
-  approveProposal(
-    request: ApproveProposalRequest,
-  ): ApiResponse<ApproveProposalResponse>;
-  deleteProposal(proposalId: string): ApiResponse<void>;
+  getCaseMessages(
+    case_id: string,
+    requester_id: string,
+  ): Promise<ApiResponse<EncryptedMessage[]>>;
+
+  // Case Management
+  openCase(
+    params: CaseCreateParams): Promise<ApiResponse<void>>
+
+
+  listCases(): Promise<ApiResponse<LegalCase[]>>;
+
+  updateCaseParticipants(
+    case_id: string,
+    new_lawyers: string[],
+  ): Promise<ApiResponse<void>>;
+
+  // Document Management
+  uploadDocument(
+    encrypted_content: number[],
+    doc_hash: string,
+    document_type: string,
+    case_id?: string,
+  ): Promise<ApiResponse<void>>;
+
+  getDocument(
+    doc_hash: string,
+    requester_id: string,
+  ): Promise<ApiResponse<LegalDocument | null>>;
+
+  // Access Control
+  grantDocumentAccess(
+    doc_hash: string,
+    lawyer_id: string,
+    consent: LegalConsent,
+  ): Promise<ApiResponse<void>>;
+
+  revokeConsent(lawyer_id: string): Promise<ApiResponse<void>>;
+
+  // AI Analysis
+  requestAiAnalysis(
+    doc_hash: string,
+    ai_canister_id: string,
+  ): Promise<ApiResponse<void>>;
+
+  // Payment Processing
+  processPayment(
+    doc_hash: string,
+    amount: number,
+  ): Promise<ApiResponse<string>>;
+
+  updatePaymentStatus(
+    payment_id: string,
+    status: {
+      payment_id: string;
+      amount: number;
+      status: string;
+      timestamp: number;
+    },
+  ): Promise<ApiResponse<void>>;
 }

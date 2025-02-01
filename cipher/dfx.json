@@ -1,0 +1,27 @@
+{
+  "canisters": {
+    "cipher_backend": {
+      "candid": "src/cipher_backend/cipher_backend.did",
+      "package": "cipher_backend",
+      "type": "rust"
+    },
+    "cipher_frontend": {
+      "dependencies": [
+        "cipher_backend"
+      ],
+      "source": [
+        "src/cipher_frontend/dist"
+      ],
+      "type": "assets",
+      "workspace": "cipher_frontend"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}

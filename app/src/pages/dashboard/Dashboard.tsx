@@ -1,89 +1,113 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { EvervaultCard, Icon } from '@/components/ui/evervault-card';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { SidebarApp } from '@/components/sidebar/sidebarApp';
-import { TextAnimate } from '@/components/ui/text-animate';
+import { EvervaultCard } from '@/components/ui/evervault-card';
 import CreateGroupModal from './createGroupModal';
+import { CipherCircleApiClient } from '@/api/cipherCircleApi';
+import { LegalCase } from '@/api/clientApi';
+import { useNavigate } from 'react-router-dom';
 
 const Dashboard = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [groups, setGroups] = useState<LegalCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const groups = [
-    { id: 1, name: 'Legal Team Alpha', members: 12, lastActive: '2h ago' },
-    { id: 2, name: 'Corporate Counsel', members: 8, lastActive: '1d ago' },
-    { id: 3, name: 'M&A Working Group', members: 5, lastActive: '3d ago' },
-  ];
+  const api = new CipherCircleApiClient();
+  const navigate = useNavigate();
 
-  const recentActivities = [
-    {
-      id: 1,
-      action: 'Document reviewed',
-      group: 'M&A Working Group',
-      time: '30m ago',
+  // Add useEffect to fetch groups on component mount
+  useEffect(() => {
+    fetchGroups();
+  }, []); // Empty dependency array means this runs once on mount
+
+  const fetchGroups = async () => {
+    try {
+      setLoading(true);
+      const response = await api.listCases();
+      console.log("resp", response);
+      
+      if ('error' in response) {
+        setError(response.error.message);
+        setGroups([]);
+      } else if ('data' in response && 'output' in response.data) {
+        // Handle nested data.output structure from response
+        const cases = response.data.output;
+        const formattedGroups = Array.isArray(cases)
+          ? cases.map((group) => ({
+              case_id: group.case_id || '',
+              case_name: group.case_name || '',
+              client_id: group.client_id || '',
+              lawyer_ids: Array.isArray(group.lawyer_ids) ? group.lawyer_ids : [],
+              admin_id: group.admin_id || '',
+              status: group.status || 'active',
+              related_documents: Array.isArray(group.related_documents) 
+                ? group.related_documents 
+                : [],
+              privacy_level: group.privacy_level || 'Private'
+            }))
+          : [];
+        setGroups(formattedGroups);
+      } else {
+        setError('Invalid response format');
+        setGroups([]);
+      }
+    } catch (err) {
+      setError('Failed to fetch groups');
+      setGroups([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGroupCreated = () => {
+    fetchGroups();
+    setShowCreateModal(false);
+  };
+
+  const handleGroupClick = (groupId: string) => {
+    navigate(`/dashboard/chat-group/${groupId}`);
+  };
+
+  // Variants for parent container
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.2,
+      },
     },
-    {
-      id: 2,
-      action: 'New member joined',
-      group: 'Corporate Counsel',
-      time: '2h ago',
-    },
-    {
-      id: 3,
-      action: 'Contract signed',
-      group: 'Legal Team Alpha',
-      time: '5h ago',
-    },
-  ];
+  };
+
+  // Variants for child items
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0 },
+  };
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-white to-neutral-50 dark:from-neutral-900 dark:to-neutral-800">
-      {/* Sidebar */}
       <div className="sticky top-0 h-screen border-r border-neutral-200 dark:border-neutral-700">
         <SidebarApp />
       </div>
 
-      {/* Main Content */}
-      <main className="flex-1 p-8 ">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-12">
-          <TextAnimate
-            className="text-neutral-900 dark:text-white text-4xl font-semibold"
-            animation="slideLeft"
-            by="character"
-          >
-            Welcome Back
-          </TextAnimate>
-          <div className="flex items-center gap-4">
-            <button className="p-2 rounded-full text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
-              🔔
-            </button>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" />
-          </div>
-        </div>
-
-        {/* Stats Cards */}
+      <main className="flex-1 p-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          {['Active Groups', 'Total Members'].map((stat, index) => (
-            <motion.div
-              key={stat}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="p-6 rounded-xl bg-white dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-200 dark:border-neutral-700 shadow-sm dark:shadow-none"
-            >
-              <h3 className="text-neutral-600 dark:text-neutral-300 text-sm mb-2">
-                {stat}
-              </h3>
-              <div className="text-2xl font-bold text-neutral-900 dark:text-white">
-                {stat === 'Active Groups'
-                  ? groups.length
-                  : groups.reduce((acc, g) => acc + g.members, 0)}
-              </div>
-            </motion.div>
-          ))}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-6 rounded-xl bg-white dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-200 dark:border-neutral-700"
+          >
+            <h3 className="text-neutral-600 dark:text-neutral-300 text-sm mb-2">
+              Active Groups
+            </h3>
+            <div className="text-2xl font-bold text-neutral-900 dark:text-white">
+              {groups.length}
+            </div>
+          </motion.div>
         </div>
 
-        {/* Group Cards Section */}
         <section className="mb-12">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-neutral-900 dark:text-white">
@@ -92,73 +116,67 @@ const Dashboard = () => {
             <motion.button
               onClick={() => setShowCreateModal(true)}
               whileHover={{ scale: 1.05 }}
-              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:shadow-lg transition-all"
+              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg"
             >
               + Create New Group
             </motion.button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {groups.map((group) => (
-              <motion.div
-                key={group.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <div className="border border-neutral-200 dark:border-neutral-700 flex flex-col items-start p-4 relative h-[300px] cursor-pointer group hover:border-neutral-400 dark:hover:border-neutral-500 transition-colors bg-white dark:bg-neutral-800">
-                  <Icon className="absolute h-6 w-6 -top-3 -left-3 text-neutral-900 dark:text-white" />
-                  <Icon className="absolute h-6 w-6 -bottom-3 -left-3 text-neutral-900 dark:text-white" />
-                  <Icon className="absolute h-6 w-6 -top-3 -right-3 text-neutral-900 dark:text-white" />
-                  <Icon className="absolute h-6 w-6 -bottom-3 -right-3 text-neutral-900 dark:text-white" />
-
-                  <EvervaultCard
-                    text={group.name}
-                    className="text-neutral-900 dark:text-white"
-                  />
-
-                  <div className="mt-auto w-full">
-                    <div className="flex justify-between text-neutral-600 dark:text-neutral-300 text-sm">
-                      <span>👥 {group.members} members</span>
-                      <span>🕒 {group.lastActive}</span>
+          {loading ? (
+            <div className="text-center">Loading groups...</div>
+          ) : error ? (
+            <div className="text-red-500 text-center">{error}</div>
+          ) : groups.length > 0 ? (
+            <motion.div
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+            >
+              <AnimatePresence>
+                {groups.map((group) => (
+                  <motion.div
+                    key={group.case_id}
+                    variants={itemVariants}
+                    onClick={() => handleGroupClick(group.case_id)}
+                    className="relative h-[300px] cursor-pointer"
+                  >
+                    <div className="absolute inset-0 border border-neutral-200 dark:border-neutral-700 rounded-xl overflow">
+                      <EvervaultCard text={group.case_name} />
                     </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        {/* Recent Activity */}
-        <section>
-          <h2 className="text-2xl font-bold text-neutral-900 dark:text-white mb-6">
-            Recent Activity
-          </h2>
-          <div className="bg-white dark:bg-neutral-800/50 backdrop-blur-sm rounded-xl border border-neutral-200 dark:border-neutral-700 p-6 shadow-sm dark:shadow-none">
-            {recentActivities.map((activity) => (
-              <motion.div
-                key={activity.id}
-                whileHover={{ x: 5 }}
-                className="flex items-center justify-between py-3 border-b border-neutral-200 dark:border-neutral-700 last:border-0"
-              >
-                <div className="space-y-1">
-                  <div className="text-neutral-900 dark:text-white">
-                    {activity.action}
-                  </div>
-                  <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                    {activity.group}
-                  </div>
-                </div>
-                <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                  {activity.time}
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                    
+                    <div className="absolute inset-0 p-6 flex flex-col justify-between z-10">
+                      <div>
+    
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          group.privacy_level === 'Private'
+                            ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
+                            : 'bg-purple-100 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400'
+                        }`}>
+                          {group.privacy_level}
+                        </span>
+                      </div>
+                      
+                      <div className="flex justify-between text-neutral-600 dark:text-neutral-300 text-sm">
+                        <span>👥 {group.lawyer_ids.length} members</span>
+                        <span>Status: {group.status}</span>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          ) : (
+            <div className="text-center text-neutral-600 dark:text-neutral-400">
+              No groups found
+            </div>
+          )}
         </section>
 
         <CreateGroupModal
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
+          onSuccess={handleGroupCreated}
         />
       </main>
     </div>

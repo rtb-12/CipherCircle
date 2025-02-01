@@ -1,4 +1,3 @@
-"use client";
 import { WorldMap } from "@/components/ui/world-map";
 import { motion } from "framer-motion";
 import { useTheme } from '@/contexts/ThemeContext';
