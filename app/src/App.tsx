@@ -7,7 +7,7 @@ import { AccessTokenWrapper } from '@calimero-is-near/calimero-p2p-sdk';
 import { getNodeUrl } from './utils/node';
 import { ThemeProvider } from './contexts/ThemeContext';
 import Dashboard from './pages/dashboard/Dashboard';
-import ChatPage from './pages/chatGroup/ChatPage';
+import { ChatPage } from './pages/chatGroup/ChatPage';
 import Documents from './pages/documents/Document';
 import Clients from './pages/clients/Clients';
 export default function App() {

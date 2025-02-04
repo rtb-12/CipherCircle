@@ -8,6 +8,7 @@ import { CipherCircleApiClient } from '@/api/cipherCircleApi';
 import { CaseMember, LegalDocument, MessageMode } from '@/api/clientApi';
 import { IconCopy } from '@tabler/icons-react';
 import { getJWTObject } from '@/utils/storage';
+import { groupCollapsed } from 'console';
 interface EncryptedMessage {
   id: number;
   ciphertext: number[];
@@ -21,7 +22,7 @@ interface EncryptedMessage {
   read_receipts?: string[];
 }
 
-const ChatPage = () => {
+export const ChatPage = () => {
   const { groupID } = useParams<{ groupID: string }>();
   const [documents, setDocuments] = useState<LegalDocument[]>([]);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -29,10 +30,10 @@ const ChatPage = () => {
   const [messages, setMessages] = useState<EncryptedMessage[]>([]);
   const [members, setMembers] = useState<CaseMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [msgMode, setMsgMode] = useState<MessageMode>(MessageMode.Persistent);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-
+  const [uploadedDocuments, setUploadedDocuments] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const jwtObject = getJWTObject();
 
@@ -68,12 +69,14 @@ const ChatPage = () => {
     alert('Copied to clipboard');
   };
 
+  
+
   useEffect(() => {
     fetchMembers();
   }, [groupID]);
 
   useEffect(() => {
-    fetchGroupDocuments();
+    fetchDocuments();
   }, [groupID]);
 
   const handleSend = async (e: React.FormEvent) => {
@@ -140,22 +143,25 @@ const ChatPage = () => {
     }
   };
 
-  const fetchGroupDocuments = async () => {
+  const fetchDocuments = async () => {
     if (!groupID) return;
-
     try {
-      setLoading(true);
-      const response = await api.getGroupDocuments(groupID);
-
+      const api = new CipherCircleApiClient();
+      const response = await api.listRelatedDocuments(groupID);
+      console.log('Response Documents :', response);
       if ('error' in response && response.error) {
-        setError(response.error.message || 'An unknown error occurred');
+        setError(response.error.message);
+      } else if (response.data && (response.data as any).output) {
+        // Map the list of document hashes to objects with document_hash property
+        const docs = (response.data as any).output.map((doc: string) => ({
+          document_hash: doc,
+        }));
+        setUploadedDocuments(docs);
       } else {
-        setDocuments(response.data);
+        setUploadedDocuments([]);
       }
     } catch (err) {
-      setError('Failed to fetch group documents');
-    } finally {
-      setLoading(false);
+      setError('Failed to load documents');
     }
   };
 
@@ -311,6 +317,23 @@ const ChatPage = () => {
       });
     }
   }, [messages]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Create a document hash using the file name and current time
+    const doc_hash = `${file.name}_${Date.now()}`;
+
+    // Call the API to add the file as a related document
+    const response = await api.addRelatedDocument(doc_hash,  groupID || '');
+    if ('error' in response && response.error) {
+     console.error('Failed to add related document:', response.error.message);  
+    } else {
+      fetchDocuments();
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-white to-neutral-50 dark:from-neutral-900 dark:to-neutral-800">
@@ -483,7 +506,6 @@ const ChatPage = () => {
         </form>
       </div>
 
-      {/* AI Analysis Panel */}
       <div className="w-96 border-l border-neutral-200 dark:border-neutral-800 p-6">
         <h2 className="text-xl font-bold mb-6 text-neutral-900 dark:text-white">
           AI Analysis
@@ -494,7 +516,12 @@ const ChatPage = () => {
             <div className="text-neutral-600 dark:text-neutral-400 mb-2">
               Drop files here or click to upload
             </div>
-            <input type="file" className="hidden" id="file-upload" />
+            <input
+              type="file"
+              className="hidden"
+              id="file-upload"
+              onChange={handleFileUpload}
+            />
             <label
               htmlFor="file-upload"
               className="px-4 py-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg text-sm cursor-pointer"
@@ -504,65 +531,40 @@ const ChatPage = () => {
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-blue-100 dark:bg-blue-900/20 p-4 rounded-xl">
-            <h3 className="font-medium text-blue-600 dark:text-blue-400 mb-2">
-              Contract Analysis
-            </h3>
-            <ul className="space-y-2 text-sm text-blue-800 dark:text-blue-300">
-              <li>• 3 ambiguous clauses found</li>
-              <li>• 2 missing standard provisions</li>
-              <li>• 1 potential liability risk</li>
-            </ul>
-          </div>
-
-          <div className="bg-purple-100 dark:bg-purple-900/20 p-4 rounded-xl">
-            <h3 className="font-medium text-purple-600 dark:text-purple-400 mb-2">
-              Uploaded Files
-            </h3>
-            <div className="space-y-3">
-              {files.map((file) => (
-                <div
-                  key={file.name}
-                  className="flex items-center justify-between p-3 bg-white dark:bg-neutral-800 rounded-lg"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                      <span className="text-purple-500">📄</span>
-                    </div>
-                    <div>
-                      <p className="text-sm text-neutral-900 dark:text-white">
-                        {file.name}
-                      </p>
-                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                        {file.size}
-                      </p>
-                    </div>
-                  </div>
-                  <button className="text-purple-500 hover:text-purple-600 dark:hover:text-purple-400">
-                    Analyze
-                  </button>
-                </div>
+        <div className="bg-purple-100 dark:bg-purple-900/20 p-4 rounded-xl">
+          <h3 className="font-medium text-purple-600 dark:text-purple-400 mb-2">
+            Uploaded Files
+          </h3>
+          {error && <p className="text-red-500">{error}</p>}
+          {uploadedDocuments.length === 0 ? (
+            <p className="text-neutral-600 dark:text-neutral-300">
+              No files uploaded yet.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {uploadedDocuments.map((doc, idx) => (
+                <li key={idx} className="p-2 bg-white dark:bg-neutral-800 rounded shadow">
+                  {doc.document_hash}
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          )}
         </div>
-      </div>
-      {groupID && (
-        <AddMemberModal
-          isOpen={showAddMemberModal}
-          onClose={() => setShowAddMemberModal(false)}
-          onAdd={handleAddMember}
-          caseId={groupID}
+        {groupID && (
+          <AddMemberModal
+            isOpen={showAddMemberModal}
+            onClose={() => setShowAddMemberModal(false)}
+            onAdd={handleAddMember}
+            caseId={groupID}
+          />
+        )}
+        <PaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          onSubmit={handleSubmitPayment}
         />
-      )}
-      <PaymentModal
-        isOpen={showPaymentModal}
-        onClose={() => setShowPaymentModal(false)}
-        onSubmit={handleSubmitPayment}
-      />
+      </div>
     </div>
   );
 };
 
-export default ChatPage;

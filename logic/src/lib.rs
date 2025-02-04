@@ -4,6 +4,7 @@ use calimero_storage::collections::UnorderedMap;
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Verifier, Signature, VerifyingKey as PublicKey}; 
 use std::convert::TryFrom;
+use std::collections::HashMap;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
 pub enum MessageMode {
@@ -14,8 +15,8 @@ pub enum MessageMode {
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Default)]
 pub enum PrivacyLevel {
     #[default]
-    Private,    // Only invited members can access
-    Public      // Visible to whole organization
+    Private,   
+    Public    
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
@@ -35,7 +36,6 @@ pub struct CaseCreateParams {
     initial_docs: Option<Vec<String>>
 }
 
-
 // Legal Document Structure
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Default, Clone)]
 pub struct LegalDocument {
@@ -45,11 +45,9 @@ pub struct LegalDocument {
     owner_id: String,
     case_id: Option<String>,
     access_list: Vec<String>,
-    ai_analysis_id: Option<String>, 
-    payment_id: Option<String>,     
+    ai_analysis_id: Option<String>,    
     timestamp: u64
 }
-
 
 // Secure Message Structure
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
@@ -289,39 +287,8 @@ pub fn get_visible_messages(
     {
         return Err(Error::msg("Unauthorized access to case chat"));
     }
-    
         // Retrieve all messages for the case
         Ok(self.messages.get(&case_id)?.unwrap_or_default())
-    }
-
-    pub fn request_ai_analysis(
-        &mut self,
-        doc_hash: String,
-        ai_canister_id: String
-    ) -> Result<(), Error> {
-        // Verify document exists
-        self.documents.get(&doc_hash)?
-            .ok_or(Error::msg("Document not found"))?;
-
-        // Store pending analysis
-        let doc_hash = doc_hash.clone();
-        let analysis_id = format!("{}_{}", doc_hash, env::time_now());
-        self.ai_results.insert(analysis_id.clone(), AIAnalysisResult {
-            analysis_id: analysis_id.clone(),
-            document_hash: doc_hash.clone(),
-            summary: String::new(),
-            risks_detected: 0,
-            recommendations: Vec::new(),
-            generated_by: ai_canister_id.clone(),
-            timestamp: env::time_now()
-        })?;
-
-        app::emit!(CipherEvent::AnalysisRequested {
-            doc_hash: &doc_hash,
-            ai_canister: &ai_canister_id
-        });
-
-        Ok(())
     }
 
     // Callback from ICP AI Canister
@@ -349,103 +316,7 @@ pub fn get_visible_messages(
 
         Ok(())
     }
-
-    // Payment Processing with ICP
-    pub fn process_payment(
-        &mut self,
-        doc_hash: String,
-        // payment_canister_id: String,
-        amount: u64
-    ) -> Result<String, Error> {
-        let document_hash = doc_hash.clone();
-        let payment_request = PaymentRequest {
-            document_hash: doc_hash.clone(),
-            amount,
-            payer: env::executor_id().to_vec()
-        };
-
-        // Generate a unique payment ID locally
-        let payment_id = format!("payment_{}_{}", doc_hash, env::time_now());
-
-        // Store payment status in Calimero
-        self.payments.insert(payment_id.clone(), PaymentStatus {
-            payment_id: payment_id.clone(),
-            amount: payment_request.amount,
-            status: "pending".to_string(),
-            timestamp: env::time_now()
-        })?;
-
-        if let Some(mut doc) = self.documents.get(&doc_hash)? {
-            doc.payment_id = Some(payment_id.clone());
-            self.documents.insert(doc_hash, doc)?;
-        }
-
-        app::emit!(CipherEvent::PaymentInitiated {
-            doc_hash: &document_hash,
-            payment_id: &payment_id
-        });
-
-        Ok(payment_id)
-    }
-
-    // Payment Callback from ICP
-    pub fn update_payment_status(
-        &mut self,
-        payment_id: String,
-        status: PaymentStatus
-    ) -> Result<(), Error> {
-        self.payments.insert(payment_id.clone(), status.clone())?;
-
-        if status.status == "completed" {
-            app::emit!(CipherEvent::PaymentCompleted {
-                doc_hash: &self.get_doc_hash_by_payment(&payment_id)?,
-                payment_id: &payment_id
-            });
-        }
-
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    async fn verify_analysis_permissions(
-        &self,
-        doc_hash: &str
-    ) -> Result<(), Error> {
-        let doc = self.documents.get(doc_hash)?
-            .ok_or(Error::msg("Document not found"))?;
-
-        // Check payment status if required
-        if let Some(payment_id) = &doc.payment_id {
-            let status = self.payments.get(payment_id)?
-                .ok_or(Error::msg("Payment not found"))?;
-
-            if status.status != "completed" {
-                return Err(Error::msg("Payment not completed"));
-            }
-        }
-
-        // Check access rights
-        let caller = String::from_utf8_lossy(&env::executor_id()).to_string();
-        if doc.owner_id != caller && !doc.access_list.contains(&caller) {
-            return Err(Error::msg("Unauthorized access"));
-        }
-
-        Ok(())
-    }
-
-    // Helper to get document hash by payment ID
-    fn get_doc_hash_by_payment(
-        &self,
-        payment_id: &str
-    ) -> Result<String, Error> {
-        for (doc_hash, doc) in self.documents.entries()? {
-            if doc.payment_id.as_deref() == Some(payment_id) {
-                return Ok(doc_hash);
-            }
-        }
-        Err(Error::msg("Document not found for payment"))
-    }
-
+  
     // Case Management
     pub fn open_case(
         &mut self,
@@ -580,117 +451,110 @@ pub fn list_case_members(
     Ok(members)
 }
 
-    pub fn store_document_in_vault(
-        &mut self,
-        encrypted_content: Vec<u8>,
-        doc_hash: String, 
-        document_type: String,
-        case_id: Option<String>,
-        initial_access_list: Option<Vec<String>>
-    ) -> Result<(), Error> {
-        let owner = env::executor_id();
-        let owner_id = String::from_utf8_lossy(&owner).to_string();
-        
-        let document = LegalDocument {
-            encrypted_content,
-            document_hash: doc_hash.clone(),
-            document_type: document_type.clone(),
-            owner_id: owner_id,
-            case_id,
-            access_list: initial_access_list.unwrap_or_default(),
-            ai_analysis_id: None,
-            payment_id: None,
-            timestamp: env::time_now()
-        };
+// Vault Operations
+pub fn store_document(
+    &mut self,
+    encrypted_content: Vec<u8>,
+    doc_hash: String, 
+    document_type: String,
+) -> Result<(), Error> {
+    let owner = env::executor_id();
+    let owner_id = String::from_utf8_lossy(&owner).to_string();
 
-        self.documents.insert(doc_hash.clone(), document)?;
-        
-        app::emit!(CipherEvent::DocumentUploaded {
-            doc_hash: &doc_hash,
-            doc_type: &document_type
-        });
-        
-        Ok(())
+    let document = LegalDocument {
+        encrypted_content,
+        document_hash: doc_hash.clone(),
+        document_type: document_type.clone(),
+        owner_id: owner_id.clone(),
+        // No case for a simple store
+        case_id: None,
+        // Owner is granted access by default
+        access_list: vec![owner_id.clone()],
+        ai_analysis_id: None,
+        timestamp: env::time_now(),
+    };
+
+    self.documents.insert(doc_hash.clone(), document)?;
+    
+    app::emit!(CipherEvent::DocumentUploaded {
+        doc_hash: &doc_hash,
+        doc_type: &document_type
+    });
+    
+    Ok(())
+}
+
+pub fn grant_access(
+    &mut self,
+    doc_hash: String,
+    grantee_id: String,
+) -> Result<(), Error> {
+    let caller = env::executor_id();
+    let owner_id = String::from_utf8_lossy(&caller).to_string();
+
+    let mut doc = self.documents.get(&doc_hash)?
+        .ok_or(Error::msg("Document not found"))?;
+
+    // Only the owner can grant access
+    if doc.owner_id != owner_id {
+        return Err(Error::msg("Only document owner can grant access"));
     }
 
-    // Grant access to document for a user or group
-    pub fn grant_vault_access(
-        &mut self,
-        doc_hash: String,
-        grantee_id: String,
-        is_group: bool
-    ) -> Result<(), Error> {
-        let caller = env::executor_id();
-        let owner_id = String::from_utf8_lossy(&caller).to_string();
-
-        let mut doc = self.documents.get(&doc_hash)?
-            .ok_or(Error::msg("Document not found"))?;
-
-        // Verify caller is document owner
-        if doc.owner_id != owner_id {
-            return Err(Error::msg("Only document owner can grant access"));
-        }
-
-        if is_group {
-            // If granting to group, verify group exists and add all members
-            if let Some(case) = self.cases.get(&grantee_id)? {
-                // Add all group members to access list
-                doc.access_list.extend(case.lawyer_ids.clone());
-                if !case.client_id.is_empty() {
-                    doc.access_list.push(case.client_id.clone());
-                }
-            } else {
-                return Err(Error::msg("Group not found"));
-            }
-        } else {
-            // Add individual user
-            doc.access_list.push(grantee_id.clone());
-        }
-
-        self.documents.insert(doc_hash.clone(), doc)?;
-
-        Ok(())
+    if !doc.access_list.contains(&grantee_id) {
+        doc.access_list.push(grantee_id);
     }
 
-    // Get all documents accessible to caller (owned + shared)
-    pub fn get_accessible_documents(&self) -> Result<Vec<LegalDocument>, Error> {
-        let caller = String::from_utf8_lossy(&env::executor_id()).to_string();
+    self.documents.insert(doc_hash, doc)?;
+    Ok(())
+}
+
+pub fn get_accessible_documents(&self) -> Result<Vec<LegalDocument>, Error> {
+    let caller = String::from_utf8_lossy(&env::executor_id()).to_string();
+    
+    let accessible_docs = self.documents.entries()?
+        .filter(|(_, doc)| {
+            doc.owner_id == caller || doc.access_list.contains(&caller)
+        })
+        .map(|(_, doc)| doc)
+        .collect();
         
-        let accessible_docs = self.documents.entries()?
-            .filter(|(_, doc)| {
-                doc.owner_id == caller || doc.access_list.contains(&caller)
-            })
-            .map(|(_, doc)| doc)
-            .collect();
-            
-        Ok(accessible_docs)
-    }
+    Ok(accessible_docs)
+}
 
     // Get all documents in a group/case
-    pub fn get_group_documents(&self, case_id: String) -> Result<Vec<LegalDocument>, Error> {
-        let caller = String::from_utf8_lossy(&env::executor_id()).to_string();
-        
-        // Verify caller is member of group
-        let case = self.cases.get(&case_id)?
-            .ok_or(Error::msg("Case not found"))?;
-            
-        if !case.lawyer_ids.contains(&caller) 
-            && case.client_id != caller 
-            && case.admin_id != caller {
-            return Err(Error::msg("Unauthorized access"));
-        }
-
-        // Get all documents associated with this case
-        let group_docs = self.documents.entries()?
-            .filter(|(_, doc)| {
-                doc.case_id.as_ref() == Some(&case_id)
-            })
-            .map(|(_, doc)| doc)
-            .collect();
-            
-        Ok(group_docs)
+    pub fn add_related_document(&mut self, document_hash: String, uploader_id: &str , case_id: Option<String>) -> Result<(), Error> {
+        let case_id = case_id.ok_or_else(|| Error::msg("Case ID is required"))?;
+        let mut case = self.cases.get(&case_id)?
+        .ok_or(Error::msg("Case not found"))?;
+        // Check if the uploader is one of the authorized members: client, one of the lawyers, or the admin.
+         // Only existing members can add new members
+    if uploader_id != case.admin_id && uploader_id != case.client_id && !case.lawyer_ids.contains(&uploader_id.to_string()) {
+        return Err(Error::msg("Only case admin or case members can upload documents"));
     }
 
+        // Check if the document is already present
+        if case.related_documents.contains(&document_hash) {
+            return Err(Error::msg("Document is already associated with this case."));
+        }
+        // Add the document to the case
+        case.related_documents.push(document_hash);
+        self.cases.insert(case_id, case)?;
+        Ok(())
+    }
+        
+    pub fn list_related_documents(&self, case_id: Option<String>) -> Result<Vec<LegalDocument>, Error> {
+        let case_id = case_id.ok_or_else(|| Error::msg("Case ID is required"))?;
+        let case = self.cases.get(&case_id)?
+            .ok_or(Error::msg("Case not found"))?;
+        
+        let mut docs = Vec::new();
+        for doc_hash in &case.related_documents {
+            if let Some(doc) = self.documents.get(doc_hash)? {
+                docs.push(doc.clone());
+            }
+        }
+        Ok(docs)
+    }
     // Consent Management
     pub fn revoke_consent(
         &mut self,

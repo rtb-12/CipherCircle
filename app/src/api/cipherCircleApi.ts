@@ -19,7 +19,7 @@ import {
   CaseMember
 } from './clientApi';
 import { CipherEvent } from '@/types/events';
-import { AuthService } from '@/components/authClient/authClient';
+
 
 export class CipherCircleApiClient implements CipherCircleApi {
   private rpcClient: JsonRpcClient;
@@ -29,6 +29,12 @@ export class CipherCircleApiClient implements CipherCircleApi {
     const nodeUrl = getNodeUrl();
     this.rpcClient = new JsonRpcClient(nodeUrl, '/jsonrpc');
     this.wsClient = new WsSubscriptionsClient(nodeUrl, '/ws');
+  }
+  grantDocumentAccess(doc_hash: string, lawyer_id: string, consent: LegalConsent): Promise<ApiResponse<void>> {
+    throw new Error('Method not implemented.');
+  }
+  processPayment(doc_hash: string, amount: number): Promise<ApiResponse<string>> {
+    throw new Error('Method not implemented.');
   }
   listCases(): Promise<ApiResponse<LegalCase[]>> {
     throw new Error('Method not implemented.');
@@ -189,118 +195,7 @@ export class CipherCircleApiClient implements CipherCircleApi {
       : { data: undefined };
   }
   
-  async storeDocumentInVault(
-    params: {
-      encrypted_content: number[];
-      doc_hash: string;
-      document_type: string;
-      case_id?: string;
-      initial_access_list?: string[];
-    }
-  ): Promise<ApiResponse<void>> {
-    const auth = this.getConfigAndJwt();
-    if ('error' in auth) return { error: auth.error! };
-    const { jwtObject, config } = auth;
-  
-    const response = await this.rpcClient.query(
-      {
-        contextId: jwtObject?.context_id ?? '',
-        method: 'store_document_in_vault',
-        argsJson: { params },
-        executorPublicKey: jwtObject.executor_public_key,
-      },
-      config,
-    );
-  
-    return response.error
-      ? {
-          error: {
-            message: response.error.toString(),
-            code: response.error.code,
-          },
-        }
-      : { data: undefined };
-  }
-  
-  async grantVaultAccess(
-    doc_hash: string,
-    grantee_id: string,
-    is_group: boolean
-  ): Promise<ApiResponse<void>> {
-    const auth = this.getConfigAndJwt();
-    if ('error' in auth) return { error: auth.error! };
-    const { jwtObject, config } = auth;
-  
-    const response = await this.rpcClient.query(
-      {
-        contextId: jwtObject?.context_id ?? '',
-        method: 'grant_vault_access',
-        argsJson: { doc_hash, grantee_id, is_group },
-        executorPublicKey: jwtObject.executor_public_key,
-      },
-      config,
-    );
-  
-    return response.error
-      ? {
-          error: {
-            message: response.error.toString(),
-            code: response.error.code,
-          },
-        }
-      : { data: undefined };
-  }
-  
-  async getAccessibleDocuments(): Promise<ApiResponse<LegalDocument[]>> {
-    const auth = this.getConfigAndJwt();
-    if ('error' in auth) return { error: auth.error! };
-    const { jwtObject, config } = auth;
-  
-    const response = await this.rpcClient.query(
-      {
-        contextId: jwtObject?.context_id ?? '',
-        method: 'get_accessible_documents',
-        argsJson: {},
-        executorPublicKey: jwtObject.executor_public_key,
-      },
-      config,
-    );
-  
-    return response.error
-      ? {
-          error: {
-            message: response.error.toString(),
-            code: response.error.code,
-          },
-        }
-      : { data: response.result as LegalDocument[] };
-  }
-  
-  async getGroupDocuments(case_id: string): Promise<ApiResponse<LegalDocument[]>> {
-    const auth = this.getConfigAndJwt();
-    if ('error' in auth) return { error: auth.error! };
-    const { jwtObject, config } = auth;
-  
-    const response = await this.rpcClient.query(
-      {
-        contextId: jwtObject?.context_id ?? '',
-        method: 'get_group_documents',
-        argsJson: { case_id },
-        executorPublicKey: jwtObject.executor_public_key,
-      },
-      config,
-    );
-  
-    return response.error
-      ? {
-          error: {
-            message: response.error.toString(),
-            code: response.error.code,
-          },
-        }
-      : { data: response.result as LegalDocument[] };
-  }
-  
+
   async sendMessage(
     case_id: string,
     ciphertext: number[],
@@ -414,26 +309,24 @@ export class CipherCircleApiClient implements CipherCircleApi {
         }
       : { data: response.result as EncryptedMessage[] };
   }
-
-  async grantDocumentAccess(
-    doc_hash: string,
-    lawyer_id: string,
-    consent: LegalConsent,
+  async addRelatedDocument(
+    document_hash: string,
+    case_id: string,
   ): Promise<ApiResponse<void>> {
     const auth = this.getConfigAndJwt();
     if ('error' in auth) return { error: auth.error! };
     const { jwtObject, config } = auth;
-
+  
     const response = await this.rpcClient.query(
       {
         contextId: jwtObject?.context_id ?? '',
-        method: 'grant_document_access',
-        argsJson: { doc_hash, lawyer_id, consent },
+        method: 'add_related_document',
+        argsJson: { document_hash, uploader_id:jwtObject.executor_public_key, case_id },
         executorPublicKey: jwtObject.executor_public_key,
       },
       config,
     );
-
+  
     return response.error
       ? {
           error: {
@@ -444,24 +337,23 @@ export class CipherCircleApiClient implements CipherCircleApi {
       : { data: undefined };
   }
 
-  async processPayment(
-    doc_hash: string,
-    amount: number,
-  ): Promise<ApiResponse<string>> {
+  async listRelatedDocuments(
+    case_id: string,
+  ): Promise<ApiResponse<string[]>> {
     const auth = this.getConfigAndJwt();
     if ('error' in auth) return { error: auth.error! };
     const { jwtObject, config } = auth;
-
+  
     const response = await this.rpcClient.query(
       {
         contextId: jwtObject?.context_id ?? '',
-        method: 'process_payment',
-        argsJson: { doc_hash, amount },
+        method: 'list_related_documents',
+        argsJson: { case_id },
         executorPublicKey: jwtObject.executor_public_key,
       },
       config,
     );
-
+  
     return response.error
       ? {
           error: {
@@ -469,9 +361,8 @@ export class CipherCircleApiClient implements CipherCircleApi {
             code: response.error.code,
           },
         }
-      : { data: response.result as string };
+      : { data: response.result as string[] };
   }
-
 
   // WebSocket Event Subscriptions
   async subscribeToEvents(

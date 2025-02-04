@@ -1,5 +1,0 @@
-[workspace]
-members = [
-    "src/cipher_backend"
-]
-resolver = "2"
