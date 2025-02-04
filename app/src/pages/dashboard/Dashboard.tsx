@@ -24,7 +24,7 @@ const Dashboard = () => {
   const fetchGroups = async () => {
     try {
       setLoading(true);
-      const response = await api.listCases();
+      const response = await api.listCasesForUser();
       console.log("resp", response);
       
       if ('error' in response) {

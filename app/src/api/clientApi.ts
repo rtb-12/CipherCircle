@@ -22,6 +22,7 @@ export interface CaseMember {
 }
 
 export interface CaseCreateParams {
+  admin_id: string; // mandatory
   case_name: string; // mandatory
   description: string; // mandatory
   privacy_level: PrivacyLevel; // mandatory

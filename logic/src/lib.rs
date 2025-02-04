@@ -27,6 +27,7 @@ pub struct CaseMember {
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
 pub struct CaseCreateParams {
+    admin_id: String,
     case_name: String,
     description: String,
     client_id: Option<String>,
@@ -167,14 +168,13 @@ impl CipherState {
     // Secure Messaging
 pub fn send_message(
     &mut self,
+    sender_id: String,
     case_id: String,
     ciphertext: Vec<u8>,
     iv: Vec<u8>,
     mode: MessageMode 
 ) -> Result<(), Error> {
-    let sender = env::executor_id();
-    let sender_str = String::from_utf8_lossy(&sender).to_string();
-
+    let sender_str = sender_id.clone();
     let case = self.cases.get(&case_id)?
         .ok_or(Error::msg("Case not found"))?;
 
@@ -200,7 +200,7 @@ pub fn send_message(
 
     app::emit!(CipherEvent::MessageSent {
         case_id: &case_id,
-        sender: &String::from_utf8_lossy(&sender)
+        sender: &sender_id
     });
     
     Ok(())
@@ -258,10 +258,12 @@ pub fn get_visible_messages(
     let case = self.cases.get(&case_id)?
         .ok_or(Error::msg("Case not found"))?;
 
-    if requester_id != case.client_id && !case.lawyer_ids.contains(&requester_id) {
-        return Err(Error::msg("Unauthorized access"));
+        if requester_id != case.client_id 
+        && !case.lawyer_ids.contains(&requester_id)
+        && requester_id != case.admin_id 
+    {
+        return Err(Error::msg("Unauthorized access to case chat"));
     }
-
     Ok(self.messages.get(&case_id)?.unwrap_or_default()
         .into_iter()
         .filter(|msg| {
@@ -281,9 +283,12 @@ pub fn get_visible_messages(
             .ok_or(Error::msg("Case not found"))?;
     
         // Validate requester's access rights
-        if requester_id != case.client_id && !case.lawyer_ids.contains(&requester_id) {
-            return Err(Error::msg("Unauthorized access to case chat"));
-        }
+        if requester_id != case.client_id 
+        && !case.lawyer_ids.contains(&requester_id)
+        && requester_id != case.admin_id 
+    {
+        return Err(Error::msg("Unauthorized access to case chat"));
+    }
     
         // Retrieve all messages for the case
         Ok(self.messages.get(&case_id)?.unwrap_or_default())
@@ -446,11 +451,10 @@ pub fn get_visible_messages(
         &mut self,
         params: CaseCreateParams
     ) -> Result<(), Error> {
-        let caller = env::executor_id();
-        let lawyer_id = String::from_utf8_lossy(&caller).to_string();
+        let lawyer_id = params.admin_id.clone();    // Admin is the creator
     
         // Validate mandatory fields
-        if params.case_name.is_empty() || params.description.is_empty() {
+        if params.case_name.is_empty() || params.description.is_empty() || params.admin_id.is_empty() {
             return Err(Error::msg("Case name and description are required"));
         }
     
@@ -477,20 +481,12 @@ pub fn get_visible_messages(
         Ok(())
     }
 
-    pub fn list_cases(&self) -> Result<Vec<LegalCase>, Error> {
-        let caller = String::from_utf8_lossy(&env::executor_id()).to_string();
-        
+    pub fn list_cases_for_user(&self, user_id: String) -> Result<Vec<LegalCase>, Error> {
         let cases: Vec<LegalCase> = self.cases.entries()?
             .filter(|(_, case)| {
-                // Show if:
-                // 1. Caller is admin
-                // 2. Caller is a lawyer in the case
-                // 3. Caller is the client
-                // 4. Case is public
-                case.admin_id == caller 
-                || case.lawyer_ids.contains(&caller)
-                || case.client_id == caller
-                || matches!(case.privacy_level, PrivacyLevel::Public)
+                case.admin_id == user_id 
+                || case.lawyer_ids.contains(&user_id)
+                || case.client_id == user_id
             })
             .map(|(_, case)| case)
             .collect();
@@ -500,20 +496,18 @@ pub fn get_visible_messages(
     // Add member to case
 pub fn add_case_member(
     &mut self,
+    caller_id: String,
     case_id: String,
     new_member_id: String,
-    role: String // "lawyer" or "client"
+    role: String,
 ) -> Result<(), Error> {
-    let caller = env::executor_id();
-    let caller_id = String::from_utf8_lossy(&caller).to_string();
-
     // Get existing case
     let mut case = self.cases.get(&case_id)?
         .ok_or(Error::msg("Case not found"))?;
 
     // Only existing members can add new members
-    if caller_id != case.client_id && !case.lawyer_ids.contains(&caller_id) {
-        return Err(Error::msg("Only case members can add new members"));
+    if caller_id != case.admin_id && caller_id != case.client_id && !case.lawyer_ids.contains(&caller_id) {
+        return Err(Error::msg("Only case admin or case members can add new members"));
     }
 
     // Add member based on role
@@ -548,14 +542,13 @@ pub fn add_case_member(
     
 pub fn list_case_members(
     &self,
-    case_id: String
+    case_id: String,
+    caller_id: String
 ) -> Result<Vec<CaseMember>, Error> {
-    let caller = String::from_utf8_lossy(&env::executor_id()).to_string();
-    
     // Get the case
     let case = self.cases.get(&case_id)?
         .ok_or(Error::msg("Case not found"))?;
-    
+    let caller = caller_id.clone(); 
     // Check permissions - must be member of case
     if !case.lawyer_ids.contains(&caller) 
         && case.client_id != caller 

@@ -26,11 +26,15 @@ const Documents = () => {
       
       if ('error' in response) {
         setError(response.error.message);
+        setDocuments([]); // ensure documents is an array on error
       } else {
-        setDocuments(response.data);
+        // If response.data is not an array, force it to an array.
+        const docs = Array.isArray(response.data) ? response.data : [];
+        setDocuments(docs);
       }
     } catch (err) {
       setError('Failed to fetch documents');
+      setDocuments([]); // fallback as an empty array
     } finally {
       setLoading(false);
     }

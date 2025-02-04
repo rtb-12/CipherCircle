@@ -1,22 +1,41 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CipherCircleApiClient } from '@/api/cipherCircleApi';
 
 interface AddMemberModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (name: string, role: string) => void;
+  caseId: string;
+  onMemberAdded?: () => void;
 }
 
-const AddMemberModal = ({ isOpen, onClose, onAdd }: AddMemberModalProps) => {
+const AddMemberModal = ({ isOpen, onClose, caseId, onMemberAdded }: AddMemberModalProps) => {
   const [name, setName] = useState('');
-  const [role, setRole] = useState('lawyer');
+  const [role, setRole] = useState<'lawyer' | 'client'>('lawyer');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onAdd(name, role);
-    setName('');
-    setRole('lawyer');
-    onClose();
+    setLoading(true);
+    const api = new CipherCircleApiClient();
+    try {
+      console.log('Adding member:', name, role);
+      console.log('Case ID:', caseId);
+      const response = await api.addCaseMember(caseId, name, role);
+      if (response.error) {
+        alert(`Error: ${response.error.message}`);
+      } else {
+        onMemberAdded && onMemberAdded();
+        onClose();
+      }
+    } catch (error) {
+      console.error('Failed to add member:', error);
+      alert('Failed to add member. See console for details.');
+    } finally {
+      setLoading(false);
+      setName('');
+      setRole('lawyer');
+    }
   };
 
   return (
@@ -31,48 +50,43 @@ const AddMemberModal = ({ isOpen, onClose, onAdd }: AddMemberModalProps) => {
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -20, opacity: 0 }}
-            className="bg-white dark:bg-neutral-900 rounded-xl p-6 w-full max-w-md"
+            exit={{ y: 20, opacity: 0 }}
+            className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md"
           >
-            <h2 className="text-xl font-bold mb-4">Add Member</h2>
+            <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Add Member</h2>
             <form onSubmit={handleSubmit}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm mb-2">Member ID</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full p-2 rounded-lg border dark:border-neutral-700 dark:bg-neutral-800"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-2">Role</label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="w-full p-2 rounded-lg border dark:border-neutral-700 dark:bg-neutral-800"
-                  >
-                    <option value="lawyer">Lawyer</option>
-                    <option value="client">Client</option>
-                  </select>
-                </div>
-                <div className="flex justify-end gap-2 mt-4">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="px-4 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-lg bg-blue-500 text-white"
-                  >
-                    Add Member
-                  </button>
-                </div>
+              <input
+                type="text"
+                placeholder="Member ID"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full p-2 mb-3 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                required
+              />
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'lawyer' | 'client')}
+                className="w-full p-2 mb-3 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                required
+              >
+                <option value="lawyer">Lawyer</option>
+                <option value="client">Client</option>
+              </select>
+              <div className="flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-3 py-1 rounded bg-blue-600 text-white"
+                >
+                  {loading ? 'Adding...' : 'Add'}
+                </button>
               </div>
             </form>
           </motion.div>

@@ -12,19 +12,32 @@ import {
   IconSun,
   IconMoon,
   IconWallet,
+  IconCopy,
 } from '@tabler/icons-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getJWTObject } from '@/utils/storage';
 
 export function SidebarApp() {
   const [open, setOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const [walletConnected, setWalletConnected] = useState(false); // State to track wallet connection
   const [walletAddress, setWalletAddress] = useState<string | null>(null); // State to store wallet address
+  const jwtObject = getJWTObject();
+  const publicKey = jwtObject?.executor_public_key;
+  const trimmedPublicKey = publicKey
+    ? `${publicKey.slice(0, 6)}...${publicKey.slice(-6)}`
+    : '';
 
+  const handleCopy = () => {
+    if (publicKey) {
+      navigator.clipboard.writeText(publicKey);
+      alert('Public key copied!');
+    }
+  };
   const links = [
     {
       label: 'Dashboard',
@@ -184,7 +197,22 @@ export function SidebarApp() {
                 />
               </motion.div>
             )}
-
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <SidebarLink
+                link={{
+                  label: 'Copy Public Key',
+                  href: '#',
+                  icon: (
+                    <IconCopy className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+                  ),
+                  onClick: (e) => {
+                    e.preventDefault();
+                    handleCopy();
+                  },
+                }}
+                className="hover:bg-neutral-100 dark:hover:bg-neutral-700/50  py-2.5 rounded-lg transition-colors"
+              />
+            </motion.div>
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <SidebarLink
                 link={{
