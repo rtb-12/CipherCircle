@@ -1,10 +1,9 @@
-import React, { useState ,useEffect} from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { EvervaultCard, Icon } from '@/components/ui/evervault-card';
 import { SidebarApp } from '@/components/sidebar/sidebarApp';
 import { CipherCircleApiClient } from '@/api/cipherCircleApi';
 import { LegalDocument } from '@/api/clientApi';
-
 
 const Documents = () => {
   const [documents, setDocuments] = useState<LegalDocument[]>([]);
@@ -14,27 +13,45 @@ const Documents = () => {
   const [newAccess, setNewAccess] = useState('');
   const api = new CipherCircleApiClient();
 
-
   useEffect(() => {
     fetchDocuments();
   }, []);
+  const getFileUrl = (
+    encryptedContent: number[],
+    documentType: string,
+  ): string => {
+    if (!encryptedContent || encryptedContent.length === 0) return '';
+    const byteArray = new Uint8Array(encryptedContent);
+    const blob = new Blob([byteArray], { type: documentType });
+    console.log('Blob:', blob);
+    return URL.createObjectURL(blob);
+  };
 
   const fetchDocuments = async () => {
     try {
       setLoading(true);
       const response = await api.getAccessibleDocuments();
-      
-      if ('error' in response) {
-        setError(response.error.message);
-        setDocuments([]); // ensure documents is an array on error
-      } else {
-        // If response.data is not an array, force it to an array.
-        const docs = Array.isArray(response.data) ? response.data : [];
-        setDocuments(docs);
+      console.log('response vault data:', response.data);
+      const docs = response.data?.output ? response.data.output : response.data;
+      if (!Array.isArray(docs) || docs.length === 0) {
+        console.log('No documents found');
+        setDocuments([]);
+        return;
       }
+
+      const docsWithUrls = docs.map((doc) => ({
+        ...doc,
+        fileUrl:
+          doc.encrypted_content && doc.encrypted_content.length > 0
+            ? getFileUrl(doc.encrypted_content, doc.document_type)
+            : '',
+      }));
+
+      console.log('docs with urls:', docsWithUrls);
+      setDocuments(docsWithUrls);
     } catch (err) {
       setError('Failed to fetch documents');
-      setDocuments([]); // fallback as an empty array
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -45,22 +62,17 @@ const Documents = () => {
       // Convert file to byte array
       const arrayBuffer = await file.arrayBuffer();
       const encrypted_content = Array.from(new Uint8Array(arrayBuffer));
-      
+
       // Create hash from file name and timestamp
       const doc_hash = `${file.name}_${Date.now()}`;
-      
-      const params = {
+      const response = await api.storeDocumentInVault(
         encrypted_content,
         doc_hash,
-        document_type: file.type,
-        case_id: undefined, // Optional: Add case_id if needed
-        initial_access_list: [] // Optional: Add initial access list
-      };
+        file.type,
+      );
 
-      const response = await api.storeDocumentInVault(params);
-      
       if ('error' in response) {
-        throw new Error(response.error.message);
+        throw new Error(response.error!.message);
       }
 
       // Refresh document list
@@ -70,24 +82,27 @@ const Documents = () => {
     }
   };
 
-  const handleGrantAccess = async (docHash: string, granteeId: string, isGroup: boolean) => {
+  const handleGrantAccess = async (
+    docHash: string,
+    granteeId: string,
+    isGroup: boolean,
+  ) => {
     try {
       const response = await api.grantVaultAccess(docHash, granteeId, isGroup);
-      
+
       if ('error' in response) {
         throw new Error(response.error.message);
       }
 
       // Refresh documents to get updated access list
       await fetchDocuments();
-      
+
       // Clear input
       setNewAccess('');
     } catch (err) {
       setError('Failed to grant access');
     }
   };
-
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-white to-neutral-50 dark:from-neutral-900 dark:to-neutral-800">
@@ -141,7 +156,6 @@ const Documents = () => {
             </div>
           </div>
         </div>
-
         {/* Document Grid */}
         {loading ? (
           <div className="text-center">Loading documents...</div>
@@ -166,6 +180,33 @@ const Documents = () => {
                 <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">
                   {doc.document_hash}
                 </h3>
+
+                {/* Render file preview */}
+                <div className="mb-4">
+                  {doc.fileUrl ? (
+                    doc.document_type.startsWith('image') ? (
+                      <img
+                        src={doc.fileUrl}
+                        alt={doc.document_hash}
+                        className="w-full max-h-64 object-contain rounded-lg cursor-pointer"
+                        onClick={() => window.open(doc.fileUrl, '_blank')}
+                      />
+                    ) : (
+                      <a
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 underline"
+                      >
+                        View File
+                      </a>
+                    )
+                  ) : (
+                    <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                      No file available.
+                    </p>
+                  )}
+                </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex -space-x-2">
@@ -195,70 +236,79 @@ const Documents = () => {
 
         {/* Access Management Modal */}
         {selectedDoc && (
-      <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-neutral-800 rounded-xl p-6 max-w-md w-full">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-neutral-900 dark:text-white">
-              Manage Access - {selectedDoc.document_hash}
-            </h2>
-            <button
-              onClick={() => setSelectedDoc(null)}
-              className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Add user or group ID..."
-                value={newAccess}
-                onChange={(e) => setNewAccess(e.target.value)}
-                className="flex-1 p-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600"
-              />
-              <select
-                className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600"
-                id="accessType"
-                defaultValue="user"
-              >
-                <option value="user">User</option>
-                <option value="group">Group</option>
-              </select>
-              <button 
-                onClick={() => {
-                  const isGroup = (document.getElementById('accessType') as HTMLSelectElement).value === 'group';
-                  if (newAccess && selectedDoc) {
-                    handleGrantAccess(selectedDoc.document_hash, newAccess, isGroup);
-                  }
-                }}
-                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg"
-              >
-                Add
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-medium text-neutral-900 dark:text-white">
-                Current Access
-              </h3>
-              {selectedDoc.access_list.map((userId, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-2 bg-neutral-100 dark:bg-neutral-700 rounded-lg"
+          <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-neutral-800 rounded-xl p-6 max-w-[35vw] w-full">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-neutral-900 dark:text-white">
+                  Manage Access - {selectedDoc.document_hash}
+                </h2>
+                <button
+                  onClick={() => setSelectedDoc(null)}
+                  className="text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
                 >
-                  <span className="text-neutral-900 dark:text-white">
-                    {userId}
-                  </span>
-                  {/* Add revoke functionality if needed */}
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Add user or group ID..."
+                    value={newAccess}
+                    onChange={(e) => setNewAccess(e.target.value)}
+                    className="flex-1 p-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600"
+                  />
+                  <select
+                    className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600"
+                    id="accessType"
+                    defaultValue="user"
+                  >
+                    <option value="user">User</option>
+                    <option value="group">Group</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      const isGroup =
+                        (
+                          document.getElementById(
+                            'accessType',
+                          ) as HTMLSelectElement
+                        ).value === 'group';
+                      if (newAccess && selectedDoc) {
+                        handleGrantAccess(
+                          selectedDoc.document_hash,
+                          newAccess,
+                          isGroup,
+                        );
+                      }
+                    }}
+                    className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg"
+                  >
+                    Add
+                  </button>
                 </div>
-              ))}
+
+                <div className="space-y-2">
+                  <h3 className="font-medium text-neutral-900 dark:text-white">
+                    Current Access
+                  </h3>
+                  {selectedDoc.access_list.map((userId, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-2 bg-neutral-100 dark:bg-neutral-700 rounded-lg"
+                    >
+                      <span className="text-neutral-900 dark:text-white">
+                        {userId}
+                      </span>
+                      {/* Add revoke functionality if needed */}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    )}
+        )}
       </main>
 
       {/* Right Sidebar */}

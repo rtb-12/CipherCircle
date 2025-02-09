@@ -10,6 +10,8 @@ import Dashboard from './pages/dashboard/Dashboard';
 import { ChatPage } from './pages/chatGroup/ChatPage';
 import Documents from './pages/documents/Document';
 import Clients from './pages/clients/Clients';
+import Settings from './pages/settings/Settings';
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -19,7 +21,7 @@ export default function App() {
             <Route path="/" element={<SetupPage />} />
             <Route path="/auth" element={<Authenticate />} />
             <Route path="/home" element={<HomePage />} />
-            <Route path="*" element={<div>404</div>} />
+
             <Route path="/dashboard" element={<Dashboard />} />
             <Route
               path="/dashboard/chat-group/:groupID"
@@ -27,7 +29,8 @@ export default function App() {
             />
             <Route path="/documents" element={<Documents />} />
             <Route path="/documents/:docID" element={<Documents />} />
-            <Route path="/clients" element={<Clients/>} />
+            <Route path="/clients" element={<Clients />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </BrowserRouter>
       </AccessTokenWrapper>

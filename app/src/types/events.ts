@@ -1,6 +1,6 @@
 export type CipherEvent = {
     type: 'MessageSent';
-    payload: { case_id: string; sender: string };
+    payload: { case_id: string; sender: string , message: string };
   } | {
     type: 'DocumentUploaded'; 
     payload: { doc_hash: string; doc_type: string };

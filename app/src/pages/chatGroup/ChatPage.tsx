@@ -9,6 +9,9 @@ import { CaseMember, LegalDocument, MessageMode } from '@/api/clientApi';
 import { IconCopy } from '@tabler/icons-react';
 import { getJWTObject } from '@/utils/storage';
 import { groupCollapsed } from 'console';
+import Tesseract from 'tesseract.js'; 
+import { ollamaActor } from '@/utils/actor';
+import { Remarkable } from 'remarkable';
 interface EncryptedMessage {
   id: number;
   ciphertext: number[];
@@ -32,11 +35,12 @@ export const ChatPage = () => {
   const [loading, setLoading] = useState(true);
   const [msgMode, setMsgMode] = useState<MessageMode>(MessageMode.Persistent);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [uploadedDocuments, setUploadedDocuments] = useState<string[]>([]);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const jwtObject = getJWTObject();
-
+  const md = new Remarkable();
   const currentUserID = jwtObject?.executor_public_key || '';
   const [files, setFiles] = useState([
     { name: 'contract.pdf', type: 'pdf', size: '2.4 MB' },
@@ -44,19 +48,19 @@ export const ChatPage = () => {
   ]);
 
   const api = new CipherCircleApiClient();
-  const encryptMessage = (
-    text: string,
-  ): { ciphertext: number[]; iv: number[] } => {
-    // For demo, using simple text encoder
-    // In production, will use proper encryption
-    const encoder = new TextEncoder();
-    const data = encoder.encode(text);
-    const iv = crypto.getRandomValues(new Uint8Array(16));
-    return {
-      ciphertext: Array.from(data),
-      iv: Array.from(iv),
-    };
-  };
+  // const encryptMessage = (
+  //   text: string,
+  // ): { ciphertext: number[]; iv: number[] } => {
+  //   // For demo, using simple text encoder
+  //   // In production, will use proper encryption
+  //   const encoder = new TextEncoder();
+  //   const data = encoder.encode(text);
+  //   const iv = crypto.getRandomValues(new Uint8Array(16));
+  //   return {
+  //     ciphertext: Array.from(data),
+  //     iv: Array.from(iv),
+  //   };
+  // };
 
   const decryptMessage = (ciphertext: number[], iv: number[]): string => {
     // For demo, simply decodes ciphertext; in production use proper decryption and IV handling
@@ -69,7 +73,36 @@ export const ChatPage = () => {
     alert('Copied to clipboard');
   };
 
+  useEffect(() => {
+    if (!groupID) {
+      console.log('groupID is not set yet.');
+      return;
+    }
   
+    console.log('Subscribing to case messages for groupID:', groupID);
+  
+    const handleNewMessage = (newMsg: EncryptedMessage) => {
+      console.log('Received new message:', newMsg);
+      setMessages((prev) => [...prev, newMsg]);
+      // Optionally, scroll to the bottom or process the message further.
+    };
+  
+    api.subscribeToCaseMessages(
+      groupID,
+      handleNewMessage,
+      (err) => {
+        console.error('WebSocket error:', err);
+        setError('WebSocket connection error');
+      }
+    );
+  
+    // Cleanup: Disconnect WebSocket on unmount.
+    return () => {
+      console.log('Disconnecting WebSocket for groupID:', groupID);
+      api.disconnectChat();
+    };
+  }, [groupID]);
+
 
   useEffect(() => {
     fetchMembers();
@@ -114,7 +147,7 @@ export const ChatPage = () => {
     try {
       setLoading(true);
       const response = await api.getCaseMessages(groupID);
-      console.log('Response:', response);
+      console.log('Response messages :', response);
       if ('error' in response && response.error) {
         setError(response.error.message || 'An unknown error occurred');
       } else {
@@ -143,25 +176,42 @@ export const ChatPage = () => {
     }
   };
 
+  const getFileUrl = (
+    encryptedContent: number[],
+    documentType: string,
+  ): string => {
+    // Ensure encryptedContent is valid and non-empty
+    if (!encryptedContent || encryptedContent.length === 0) return '';
+    const byteArray = new Uint8Array(encryptedContent);
+    const blob = new Blob([byteArray], { type: documentType });
+    console.log('Blob:', blob);
+    return URL.createObjectURL(blob);
+  };
+
   const fetchDocuments = async () => {
     if (!groupID) return;
     try {
-      const api = new CipherCircleApiClient();
-      const response = await api.listRelatedDocuments(groupID);
-      console.log('Response Documents :', response);
-      if ('error' in response && response.error) {
-        setError(response.error.message);
-      } else if (response.data && (response.data as any).output) {
-        // Map the list of document hashes to objects with document_hash property
-        const docs = (response.data as any).output.map((doc: string) => ({
-          document_hash: doc,
-        }));
-        setUploadedDocuments(docs);
-      } else {
-        setUploadedDocuments([]);
+      const response = await api.listCaseDocuments(groupID);
+      console.log('Response:', response);
+      // If the API returns its data inside "output", use that.
+      const docs = response.data?.output ? response.data.output : response.data;
+      if (!docs || docs.length === 0) {
+        console.log('No documents found');
+        setDocuments([]);
+        return;
       }
+      const docsWithUrls = docs.map((doc) => ({
+        ...doc,
+        fileUrl:
+          doc.encrypted_content && doc.encrypted_content.length
+            ? getFileUrl(doc.encrypted_content, doc.document_type)
+            : '',
+      }));
+      console.log('docs with urls:', docsWithUrls);
+      setDocuments(docsWithUrls);
     } catch (err) {
-      setError('Failed to load documents');
+      setError('Failed to fetch documents');
+      console.error(err);
     }
   };
 
@@ -319,19 +369,63 @@ export const ChatPage = () => {
   }, [messages]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Create a document hash using the file name and current time
-    const doc_hash = `${file.name}_${Date.now()}`;
+    try {
+      // Convert file to a byte array
+      const arrayBuffer = await file.arrayBuffer();
+      const fileBytes = Array.from(new Uint8Array(arrayBuffer));
 
-    // Call the API to add the file as a related document
-    const response = await api.addRelatedDocument(doc_hash,  groupID || '');
-    if ('error' in response && response.error) {
-     console.error('Failed to add related document:', response.error.message);  
-    } else {
-      fetchDocuments();
+      // Use the file name and timestamp as a document identifier
+      const docId = `${file.name}_${Date.now()}`;
+
+      // Call the API to upload the document and associate it with the case
+      const response = await api.uploadDocumentToCase(
+        fileBytes,
+        docId,
+        file.type,
+        groupID || '',
+      );
+
+      if ('error' in response && response.error) {
+        console.error('Failed to upload document:', response.error.message);
+      } else {
+        // Refresh the document list UI after successful upload.
+        fetchDocuments();
+      }
+    } catch (err) {
+      console.error('Error during file upload:', err);
+    }
+  };
+
+  const handleLLMAnalysis = async (fileContent: string) => {
+    try {
+      // Open the modal immediately with a loading indicator
+      setAnalysisResult('Loading analysis...');
+      setIsAnalysisModalOpen(true);
+
+      console.log('Analyzing LLM:');
+      const prompt = `Please carefully analyze the following legal document for its use of legal language. Identify key legal terminology, point out any ambiguous or unclear language, and highlight potential issues or areas that may require further legal review. Document text: ${fileContent}`;
+      const result = await ollamaActor.ask_ollama(prompt);
+      console.log('LLM Raw Output:', JSON.stringify(result, null, 2));
+      const responseData = JSON.parse(result as string);
+      setAnalysisResult(responseData.response);
+    } catch (error) {
+      console.error('Error during LLM analysis:', error);
+      setAnalysisResult('Error during analysis');
+    }
+  };
+
+  const handleAnalyzeFile = async (fileUrl: string) => {
+    try {
+      const { data } = await Tesseract.recognize(fileUrl, 'eng', {
+        logger: (m) => console.log(m),
+      });
+      console.log('OCR Text:', data.text);
+      handleLLMAnalysis(data.text);
+    } catch (err) {
+      console.error('Error during OCR:', err);
     }
   };
 
@@ -535,20 +629,57 @@ export const ChatPage = () => {
           <h3 className="font-medium text-purple-600 dark:text-purple-400 mb-2">
             Uploaded Files
           </h3>
-          {error && <p className="text-red-500">{error}</p>}
-          {uploadedDocuments.length === 0 ? (
-            <p className="text-neutral-600 dark:text-neutral-300">
-              No files uploaded yet.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {uploadedDocuments.map((doc, idx) => (
-                <li key={idx} className="p-2 bg-white dark:bg-neutral-800 rounded shadow">
-                  {doc.document_hash}
-                </li>
-              ))}
-            </ul>
-          )}
+          {/* {error && <p className="text-red-500">{error}</p>} */}
+          <div className="uploaded-files overflow-y-auto max-h-[70vh] mb-4">
+            {documents.length === 0 ? (
+              <p className="text-neutral-600 dark:text-neutral-300">
+                No files uploaded yet.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {documents
+                  .slice()
+                  .reverse()
+                  .map((doc, idx) => (
+                    <li
+                      key={idx}
+                      className="p-2 bg-white dark:bg-neutral-800 rounded shadow flex flex-col gap-2"
+                    >
+                      <p>{doc.document_hash}</p>
+                      {doc.document_type.includes('image') && doc.fileUrl ? (
+                        <img
+                          src={doc.fileUrl}
+                          alt={doc.document_hash}
+                          className="max-w-xs object-contain cursor-pointer"
+                          onClick={() => window.open(doc.fileUrl, '_blank')}
+                        />
+                      ) : (
+                        doc.fileUrl && (
+                          <a
+                            href={doc.fileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 underline"
+                          >
+                            View File
+                          </a>
+                        )
+                      )}
+                      <button
+                        className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors"
+                        onClick={() => {
+                          if (doc.fileUrl) {
+                            handleAnalyzeFile(doc.fileUrl);
+                          }
+                        }}
+                      >
+                        Analyze File
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
         </div>
         {groupID && (
           <AddMemberModal
@@ -564,7 +695,57 @@ export const ChatPage = () => {
           onSubmit={handleSubmitPayment}
         />
       </div>
+      {isAnalysisModalOpen && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+          <div className="bg-white dark:bg-neutral-800 rounded-lg p-6 max-w-[60vw] max-h-[80vh] overflow-y-auto mx-auto">
+            <h2 className="text-2xl text-center font-bold mb-4 text-neutral-900 dark:text-white">
+              Analysis Result
+            </h2>
+            <div className="min-h-[100px]">
+              {analysisResult === 'Loading analysis...' ? (
+                <div className="flex items-center space-x-2 justify-center">
+                  <svg
+                    className="animate-spin h-6 w-6 text-blue-500"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v8H4z"
+                    ></path>
+                  </svg>
+                  <span className="text-neutral-700 dark:text-neutral-300">
+                    Loading analysis...
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="whitespace-pre-wrap text-l leading-relaxed text-neutral-700 dark:text-neutral-300"
+                  dangerouslySetInnerHTML={{
+                    __html: md.render(analysisResult),
+                  }}
+                />
+              )}
+            </div>
+            <button
+              onClick={() => setIsAnalysisModalOpen(false)}
+              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-

@@ -50,6 +50,7 @@ export interface LegalDocument {
   ai_analysis_id?: string;
   payment_id?: string;
   timestamp: number;
+  fileUrl?: string;
 }
 
 export interface LegalCase {
