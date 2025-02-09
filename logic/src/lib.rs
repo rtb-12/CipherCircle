@@ -26,7 +26,6 @@ pub struct user_details {
     pub phone: Option<String>,
     pub email: Option<String>,
     pub wallet_id : Option<String>,
-    // List of IDs which are allowed to access this client's details.
     pub access_list: Vec<String>,
 }
 
@@ -190,7 +189,7 @@ impl CipherState {
             return Err(Error::msg("Unauthorized: can only update your own details"));
         }
         
-        // Retrieve existing details if any; if none, create default.
+    
         let mut current = self.user_details.get(&caller)?.unwrap_or(user_details{
             user_id: caller.clone(),
             name: None,
@@ -200,7 +199,7 @@ impl CipherState {
             access_list: Vec::new(),
         });
 
-        // Update fields only if provided (all are optional).
+
         if details.name.is_some() {
             current.name = details.name;
         }
@@ -222,15 +221,14 @@ impl CipherState {
         target_user_id: String,
         requester_id: String,
     ) -> Result<(), Error> {
-        // Prevent requesting your own details.
+ 
         if target_user_id == requester_id {
             return Err(Error::msg("Cannot request access to your own details"));
         }
 
-        // Get current requests for the target user.
+
         let mut requests = self.access_requests.get(&target_user_id)?.unwrap_or_default();
 
-        // Add the requester if not already present.
         if !requests.contains(&requester_id) {
             requests.push(requester_id);
         }
@@ -243,13 +241,12 @@ impl CipherState {
         &self,
 caller_id: String,
     ) -> Result<Vec<String>, Error> {
-        // Retrieve all pending access requests or return an empty Vec.
+    
         let requests = self.access_requests.get(&caller_id)?.unwrap_or_default();
         Ok(requests)
     }
     
-    /// Grant access to the caller’s details to another user.
-    /// For example, a client can give their ID to a lawyer so the lawyer can view the details.
+
     pub fn grant_user_details_access(
         &mut self,
         grantee_id: String,
@@ -269,8 +266,7 @@ caller_id: String,
         Ok(())
     }
 
-    /// Retrieve a user’s details only if the caller is the user themselves
-    /// or has been granted access by that user.
+
     pub fn get_user_details(
         &self,
         user_id: String,
@@ -313,13 +309,10 @@ pub fn send_message(
     let sender_str = sender_id.clone();
     let case = self.cases.get(&case_id)?
         .ok_or(Error::msg("Case not found"))?;
-
-    // Verify sender is case participant
     if sender_str != case.client_id && !case.lawyer_ids.contains(&sender_str) {
         return Err(Error::msg("Unauthorized sender"));
     }
 
-    // Create message with specified mode
     let message = EncryptedMessage {
         ciphertext,
         iv,
@@ -353,29 +346,29 @@ pub fn mark_message_read(
     let mut messages = self.messages.get(&case_id)?.unwrap_or_default();
     
     if let Some(message) = messages.get_mut(message_index) {
-        // Validate reader access
+       
         if !message.recipient_ids.contains(&reader_id) {
             return Err(Error::msg("Unauthorized read attempt"));
         }
 
-        // Track read receipt if not already recorded
+       
         if !message.read_receipts.contains(&reader_id) {
             message.read_receipts.push(reader_id.clone());
         }
 
-        // Handle different modes
+        
         match message.mode {
             MessageMode::Vanish => {
-                // Remove message for this specific user
+              
                 message.recipient_ids.retain(|id| id != &reader_id);
                 
-                // If no recipients left, remove message entirely
+               
                 if message.recipient_ids.is_empty() {
                     messages.remove(message_index);
                 }
             },
             MessageMode::Persistent => {
-                // Just track read receipt, no deletion
+               
             }
         }
         
@@ -455,14 +448,10 @@ pub fn get_visible_messages(
         &mut self,
         params: CaseCreateParams
     ) -> Result<(), Error> {
-        let lawyer_id = params.admin_id.clone();    // Admin is the creator
-    
-        // Validate mandatory fields
+        let lawyer_id = params.admin_id.clone(); // Admin is the creator
         if params.case_name.is_empty() || params.description.is_empty() || params.admin_id.is_empty() {
             return Err(Error::msg("Case name and description are required"));
         }
-    
-        // Generate unique case ID using name and timestamp
         let case_id = format!("{}_{}", params.case_name, env::time_now());
     
         let legal_case = LegalCase {
@@ -505,7 +494,6 @@ pub fn add_case_member(
     new_member_id: String,
     role: String,
 ) -> Result<(), Error> {
-    // Get existing case
     let mut case = self.cases.get(&case_id)?
         .ok_or(Error::msg("Case not found"))?;
 
@@ -513,8 +501,6 @@ pub fn add_case_member(
     if caller_id != case.admin_id && caller_id != case.client_id && !case.lawyer_ids.contains(&caller_id) {
         return Err(Error::msg("Only case admin or case members can add new members"));
     }
-
-    // Add member based on role
     match role.as_str() {
         "lawyer" => {
             if !case.lawyer_ids.contains(&new_member_id) {
@@ -530,11 +516,7 @@ pub fn add_case_member(
         },
         _ => return Err(Error::msg("Invalid role specified"))
     }
-
-    // Update case
     self.cases.insert(case_id.clone(), case)?;
-
-    // Emit event
     app::emit!(CipherEvent::MemberAdded {
         case_id: &case_id,
         member_id: &new_member_id,
@@ -549,21 +531,17 @@ pub fn list_case_members(
     case_id: String,
     caller_id: String
 ) -> Result<Vec<CaseMember>, Error> {
-    // Get the case
     let case = self.cases.get(&case_id)?
         .ok_or(Error::msg("Case not found"))?;
     let caller = caller_id.clone(); 
-    // Check permissions - must be member of case
     if !case.lawyer_ids.contains(&caller) 
         && case.client_id != caller 
         && case.admin_id != caller {
         return Err(Error::msg("Unauthorized access"));
     }
 
-    // Collect all members
     let mut members = Vec::new();
 
-    // Add lawyers
     for lawyer_id in &case.lawyer_ids {
         members.push(CaseMember {
             member_id: lawyer_id.clone(),
@@ -571,8 +549,6 @@ pub fn list_case_members(
             is_admin: case.admin_id == *lawyer_id
         });
     }
-
-    // Add client if exists
     if !case.client_id.is_empty() {
         members.push(CaseMember {
             member_id: case.client_id.clone(),
@@ -600,9 +576,7 @@ pub fn store_document(
         document_hash: doc_hash.clone(),
         document_type: document_type.clone(),
         owner_id: owner_id.clone(),
-        // No case for a simple store
         case_id: None,
-        // Owner is granted access by default
         access_list: vec![owner_id.clone()],
         ai_analysis_id: None,
         timestamp: env::time_now(),
@@ -667,11 +641,10 @@ pub fn get_accessible_documents(&self, caller_id: String) -> Result<Vec<LegalDoc
     ) -> Result<(), Error> {
         let owner_id = caller_id.clone();
     
-        // Fetch the case and ensure it exists.
+      
         let mut case = self.cases.get(&case_id)?
             .ok_or(Error::msg("Case not found"))?;
-    
-        // Verify the uploader is a member of the case by checking the members list.
+
         let members = self.list_case_members(case_id.clone(), owner_id.clone())?;
         if !members.iter().any(|m| m.member_id == owner_id) {
             return Err(Error::msg("Unauthorized to upload document for this case"));
@@ -691,7 +664,7 @@ pub fn get_accessible_documents(&self, caller_id: String) -> Result<Vec<LegalDoc
         let doc_hash_clone = doc_hash.clone();
         self.documents.insert(doc_hash, document)?;
     
-        // Associate this document with the case if not already added.
+    
         if !case.related_documents.contains(&doc_hash_clone) {
             case.related_documents.push(doc_hash_clone.clone());
             self.cases.insert(case_id, case)?;
@@ -705,21 +678,20 @@ pub fn get_accessible_documents(&self, caller_id: String) -> Result<Vec<LegalDoc
         Ok(())
     }
     
-    // New list_case_documents method that returns the full document file for authorized users.
+   
     pub fn list_case_documents(&self, case_id: String, caller_id: String) -> Result<Vec<LegalDocument>, Error> {
         let caller = caller_id.clone();
     
-        // Retrieve case and ensure it exists.
+     
         let case = self.cases.get(&case_id)?
             .ok_or(Error::msg("Case not found"))?;
     
-        // Verify the caller is a member of the case by checking the member list.
+     
         let members = self.list_case_members(case_id.clone(), caller.clone())?;
         if !members.iter().any(|m| m.member_id == caller) {
             return Err(Error::msg("Unauthorized access to case documents"));
         }
     
-        // Retrieve and return all associated documents.
         let mut docs = Vec::new();
         for doc_hash in &case.related_documents {
             if let Some(doc) = self.documents.get(doc_hash)? {
