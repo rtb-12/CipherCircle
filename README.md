@@ -95,6 +95,13 @@ Below is the **app architecture flowchart**, detailing **how CipherCircle operat
 - Make Payments & Sign Agreements via ICP Smart Contracts
 
 ---
+## 🎥 Demo Video
+
+Watch our demo video on YouTube to see CipherCircle in action and learn how it streamlines legal communication:
+
+[![Watch the Demo](https://img.youtube.com/vi/bH6oaLVwX3E/hqdefault.jpg)](https://youtu.be/bH6oaLVwX3E)
+
+---
 
 ## 🚀 Getting Started
 
