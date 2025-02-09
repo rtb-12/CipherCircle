@@ -24,7 +24,7 @@ This guide describes the steps to set up and run **CipherCircle** — the decent
 Open your terminal and run:
 
 ```sh
-git clone https://github.com/your-repo/ciphercircle.git
+git clone https://github.com/rtb-12/CipherCircle.git
 cd ciphercircle
 ```
 

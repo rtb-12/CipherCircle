@@ -98,8 +98,10 @@ Below is the **app architecture flowchart**, detailing **how CipherCircle operat
 
 ## 🚀 Getting Started
 
-For installation and setup instructions, please refer to the detailed guide in [INSTALL.md](./INSTALL.md).
+For detailed installation and setup instructions—including the frontend using pnpm and backend ICP canister deployment—please refer to [INSTALL.md](./INSTALL.md).
 
+**Backend ICP Canister Repository:**  
+[CipherCircleICP-Canister](https://github.com/rtb-12/CipherCircleICP-Canister.git)
 ---
 
 ## 📜 License
